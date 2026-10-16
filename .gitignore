@@ -1,0 +1,24 @@
+# ⚠️ 浏览器用户数据目录，含小黑盒登录 Cookie
+# 绝对不要提交到任何版本控制系统
+profile/
+
+# 依赖（当前是目录联接，换机器用 npm install 重建）
+# 注意：package-lock.json 要提交，锁文件是依赖可复现的保证
+node_modules/
+
+# 运行产物
+shots/
+data/
+
+# 早期探索脚本（功能已被 publish.mjs 吸收）
+_archive/
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
