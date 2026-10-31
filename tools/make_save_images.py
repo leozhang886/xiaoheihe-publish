@@ -2,7 +2,7 @@
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\assets"
+ROOT = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\assets"
 BOLD = r"C:\Windows\Fonts\msyhbd.ttc"
 REG  = r"C:\Windows\Fonts\msyh.ttc"
 def F(p, s): return ImageFont.truetype(p, s)

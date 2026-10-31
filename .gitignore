@@ -1,6 +1,11 @@
-# ⚠️ 浏览器用户数据目录，含小黑盒登录 Cookie
-# 绝对不要提交到任何版本控制系统
+# 浏览器用户数据目录，含小黑盒登录 Cookie —— 绝对不要提交
 profile/
+
+# Cookie 导出文件（含有效登录态）
+_xhh-cookie*.json
+_xhh-cookie*.txt
+*_cookies.json
+*_cookies.txt
 
 # 依赖（当前是目录联接，换机器用 npm install 重建）
 # 注意：package-lock.json 要提交，锁文件是依赖可复现的保证
@@ -9,9 +14,12 @@ node_modules/
 # 运行产物
 shots/
 data/
-
-# 早期探索脚本（功能已被 publish.mjs 吸收）
 _archive/
+_post.json
+_list.json
+
+# 临时稿
+_test-article.md
 
 # 系统文件
 Thumbs.db

@@ -2,7 +2,7 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
-OUT = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\assets"
+OUT = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\assets"
 os.makedirs(OUT, exist_ok=True)
 
 # 中文粗体 / 常规

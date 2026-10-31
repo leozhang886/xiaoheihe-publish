@@ -2,7 +2,7 @@
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\assets"
+ROOT = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\assets"
 OUT = os.path.join(ROOT, "upscale")
 os.makedirs(OUT, exist_ok=True)
 

@@ -15,7 +15,9 @@ const EMPTY_HEADINGS = ['最后', '总结', '其他', '小结', '结语', '写�
 const NUMBERED = /^([一二三四五六七八九十]+[、.]|\d+[、.)]|0\d\s)/;
 
 function stripFrontmatter(md) {
-  return md.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  // 先剥 BOM：PowerShell 的 Set-Content -Encoding UTF8 会加 EF BB BF，
+  // 有 BOM 时 ^--- 匹配不上，整个 frontmatter 会被当成正文段落。
+  return md.replace(/^\uFEFF/, '').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
 // 去掉链接目标（只留锚文字）和图片，避免 URL 被算进正文长度
@@ -84,7 +86,7 @@ function check(file) {
       if (curHeading.length > MAX_HEADING) {
         problems.push({ kind: '标题过长', line: i + 1, msg: `${curHeading.length} 字：「${curHeading}」` });
       }
-      if (EMPTY_HEADINGS.includes(curHeading)) {
+      if (EMPTY_HEADINGS.includes(curHeading.replace(NUMBERED, '').trim())) {
         problems.push({ kind: '空壳标题', line: i + 1, msg: `「${curHeading}」没有信息量` });
       }
       // 小标题必须带序号：一、二、三…… 或 1. 2. 3.

@@ -5,8 +5,8 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-SRC = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\assets\kcd2\ss8.jpg"
-OUT = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\assets\settings"
+SRC = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\assets\kcd2\ss8.jpg"
+OUT = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\assets\settings"
 os.makedirs(OUT, exist_ok=True)
 
 BOLD = r"C:\Windows\Fonts\msyhbd.ttc"

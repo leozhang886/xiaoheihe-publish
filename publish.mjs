@@ -14,11 +14,12 @@ import { loadArticle } from './lib/md2xhh.mjs';
 const argv = process.argv.slice(2);
 const file = argv.find((a) => !a.startsWith('--'));
 const DO_PUBLISH = argv.includes('--publish');
+const DO_DRAFT = argv.includes('--draft');
 // 项目根 = 本文件所在目录；截图写进项目内的 shots\。
 // 必须用 fileURLToPath：import.meta.url 里的中文是百分号编码的（桌面 -> %E6%A1%8C%E9%9D%A2）。
 const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(PROJECT_ROOT, 'shots');
-if (!file) { console.error('用法: node publish.mjs <文章.md> [--publish]'); process.exit(1); }
+if (!file) { console.error('用法: node publish.mjs <文章.md> [--publish|--draft]'); process.exit(1); }
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
 const log = (...a) => console.log('[xhh]', ...a);
@@ -458,13 +459,100 @@ const counts = await page.evaluate(() =>
 );
 log('关联计数: ' + JSON.stringify(counts));
 
+// 创作计划 / 创作任务：开关默认「不参与」，要主动切到「参与」
+// 注意：实测这两项**存不进草稿**（存草稿后重开还是「不参与」），
+// 而且提前切换会干扰草稿保存（会退化成 local_ 本地草稿）。
+// 所以只在真正发布时才动它们。
+async function joinCreationPlans(which = '文章计划') {
+  for (const [name, sel] of [['创作计划', '.creation-plan-join'], ['创作任务', '.cm-task-join']]) {
+    const state = await page.evaluate((s) => {
+      const el = document.querySelector(s);
+      if (!el) return 'missing';
+      return el.querySelector('.switch__true-label.active') ? 'on' : 'off';
+    }, sel);
+    if (state === 'missing') { log(`  ⚠ ${name}: 没找到开关`); continue; }
+    if (state === 'off') {
+      await page.click(`${sel} .switch__button`, { timeout: 8000 }).catch(() => {});
+      await sleep(800);
+    }
+    const now = await page.evaluate((s) => {
+      const el = document.querySelector(s);
+      return el?.querySelector('.switch__true-label.active') ? 'on' : 'off';
+    }, sel);
+    log(`  ${name}: ${now === 'on' ? '参与' : '不参与'}`);
+  }
+
+  // 「选择计划」下面有两个单选项：文章计划 / 热点计划，必须二选一
+  await sleep(900);
+  const picked = await page.evaluate((want) => {
+    const labels = [...document.querySelectorAll('label, span, div')]
+      .filter((e) => e.children.length === 0 && (e.textContent || '').trim() === want);
+    if (!labels.length) return 'label-not-found';
+    const el = labels[0];
+    el.scrollIntoView({ block: 'center' });
+    el.click();
+    return 'clicked';
+  }, which).catch(() => 'err');
+  await sleep(900);
+  const checked = await page.evaluate((want) => {
+    const labels = [...document.querySelectorAll('label, span, div')]
+      .filter((e) => e.children.length === 0 && (e.textContent || '').trim() === want);
+    if (!labels.length) return '?';
+    const r = labels[0].closest('label')?.querySelector('input') || labels[0].parentElement?.querySelector('input');
+    return r ? (r.checked ? 'checked' : 'unchecked') : 'no-input';
+  }, which);
+  log(`  选择计划 → ${which}（${picked} / ${checked}）`);
+}
+
+if (DO_DRAFT) {
+  log('保存到服务器草稿箱…');
+  await clickText('保存草稿');
+  await sleep(4500);
+
+  // 保存后页面可能弹提示，或直接留在编辑器
+  const after = await page.evaluate(() => ({
+    url: location.href,
+    text: (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 200),
+  }));
+  log('  当前 URL: ' + after.url);
+  log('  页面提示: ' + after.text.slice(0, 160));
+
+  const savedShot = path.join(SHOT_DIR, `draft-saved-${Date.now()}.png`);
+  await page.screenshot({ path: savedShot, fullPage: false });
+  log('截图: ' + savedShot);
+
+  // 去草稿箱核对是否出现
+  log('去草稿箱核对…');
+  await page.goto('https://www.xiaoheihe.cn/creator/draft', { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await sleep(4500);
+  const list = await page.evaluate(() =>
+    [...document.querySelectorAll('.creator-draft__content')].map((e) => (e.textContent || '').trim()).slice(0, 12)
+  );
+  log('  草稿箱前几条: ' + JSON.stringify(list, null, 0));
+  const titleOk = list.some((t) => t && String(meta.title).includes(t.slice(0, 8)));
+  log(`  ${titleOk ? '✅ 已出现在草稿箱' : '⚠️ 没在草稿箱前几条里看到，可能位置靠后'}`);
+  process.exit(0);
+}
+
 if (!DO_PUBLISH) {
   log('=== 安全模式：未发布 ===');
   log('确认无误后执行: node publish.mjs "' + file + '" --publish');
+  log('或存进草稿箱:   node publish.mjs "' + file + '" --draft');
   process.exit(0);
 }
 
 log('点击发布…');
+// 按 frontmatter 的 plan 字段决定参不参与：
+//   plan: false → 不参与（新闻类本来就不符合「非新闻」条件，报了也拿不到钱）
+//   缺省或其它 → 参与
+if (String(meta.plan).toLowerCase() === 'false') {
+  log('  frontmatter 写的是 plan: false → 跳过创作计划');
+} else {
+  // plan: hot → 热点计划；其它（true/缺省）→ 文章计划
+  const which = String(meta.plan).toLowerCase() === 'hot' ? '热点计划' : '文章计划';
+  log(`设置创作计划 / 创作任务…（${which}）`);
+  await joinCreationPlans(which);
+}
 await clickText('发布');
 await sleep(5500);
 

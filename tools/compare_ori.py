@@ -1,7 +1,7 @@
 # 对比三个版本的写作指标
 import re, os
 
-BASE = r"C:\Users\86153\OneDrive\桌面\自媒体\小黑盒\articles"
+BASE = r"C:\Users\86153\OneDrive\桌面\DSH\自媒体\小黑盒\articles"
 files = {
     "A 直复营销": "ori-A-direct-response.md",
     "B 现有规范": "ori-B-current-spec.md",
