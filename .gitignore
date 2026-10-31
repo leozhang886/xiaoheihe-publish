@@ -30,3 +30,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# SSH 私钥（本机 .ssh 不可写，临时放这里）
+_id886*
