@@ -47,17 +47,32 @@ const shot = (name) => path.join(SHOTS, `${name}-${Date.now()}.png`);
  * 这是把控制权交回真人——不自动过验证码。
  */
 async function waitForCaptcha(label = '') {
+  // 腾讯验证码经常渲染在 iframe 里，主文档 innerText 取不到，所以要多种判断
   const hasCaptcha = () =>
     page.evaluate(() => {
-      const t = document.body.innerText || '';
-      return /安全验证|请依次点击|拖动滑块|点击完成验证/.test(t);
+      // 1) 主文档里能直接看到验证文字
+      const txt = document.body.innerText || '';
+      if (/安全验证|请依次点击|拖动滑块|点击完成验证|点击按钮完成/.test(txt)) return true;
+
+      // 2) 任意 iframe 的 src / id / class 像验证码
+      for (const f of document.querySelectorAll('iframe')) {
+        const sig = [f.src, f.id, f.className, f.getAttribute('name')].filter(Boolean).join(' ');
+        if (/captcha|tcaptcha|verify|yidun|geetest|punish|verifyframe/i.test(sig)) return true;
+      }
+
+      // 3) 常见验证码容器
+      if (document.querySelector(
+        '[class*=tcaptcha],[id*=tcaptcha],[class*=captcha],[id*=captcha],[class*=yidun],[class*=geetest]'
+      )) return true;
+
+      return false;
     }).catch(() => false);
 
   if (!(await hasCaptcha())) return false;
 
   log('🔒 检测到安全验证（' + (label || '页面') + '）——请在浏览器窗口里手动完成');
-  log('   我会一直等，完成后自动继续。最多等 5 分钟。');
-  const deadline = Date.now() + 5 * 60 * 1000;
+  log('   我会一直等，完成后自动继续。最多等 10 分钟。');
+  const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
     await sleep(3000);
     if (!(await hasCaptcha())) {
@@ -66,7 +81,7 @@ async function waitForCaptcha(label = '') {
       return true;
     }
   }
-  throw new Error('等待安全验证超时（5 分钟）');
+  throw new Error('等待安全验证超时（10 分钟）——请手动发这篇');
 }
 
 let ctx = null;
