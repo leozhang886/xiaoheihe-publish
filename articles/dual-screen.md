@@ -3,7 +3,7 @@ title: 脖子疼不是屏幕太多，是摆错了
 community: 盒友杂谈
 topics: 显示器, 双屏, 桌椅
 ai: true
-plan: hot
+plan: article
 ---
 
 ![](assets/cover-dualscreen.png)

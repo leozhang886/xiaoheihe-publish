@@ -3,7 +3,7 @@ title: 销量一般，任天堂却给它设了个节日
 community: 盒友杂谈
 topics: 任天堂, 皮克敏, 主机
 ai: true
-plan: hot
+plan: article
 ---
 
 ![](assets/cover-pikmin.png)

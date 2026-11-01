@@ -3,7 +3,7 @@ title: 帧数变高了，手感反而更差
 community: 盒友杂谈
 topics: 帧生成, DLSS, 显卡
 ai: true
-plan: hot
+plan: article
 ---
 
 ![](assets/cover-framegen.png)

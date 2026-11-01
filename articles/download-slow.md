@@ -3,7 +3,7 @@ title: 下载慢，八成不是网速的问题
 community: 盒友杂谈
 topics: Steam, 下载, 网络
 ai: true
-plan: hot
+plan: article
 ---
 
 ![](assets/cover-download.png)

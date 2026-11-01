@@ -3,7 +3,7 @@ title: 电源买错，整机一起走
 community: 盒友杂谈
 topics: 电源, 装机, 硬件
 ai: true
-plan: hot
+plan: article
 ---
 
 ![](assets/cover-psu.png)
