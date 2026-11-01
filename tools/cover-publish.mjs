@@ -42,6 +42,33 @@ const log = (m) => console.log('[cv] ' + m);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (name) => path.join(SHOTS, `${name}-${Date.now()}.png`);
 
+/**
+ * 检测是否弹出了「安全验证」，弹了就等人来点。
+ * 这是把控制权交回真人——不自动过验证码。
+ */
+async function waitForCaptcha(label = '') {
+  const hasCaptcha = () =>
+    page.evaluate(() => {
+      const t = document.body.innerText || '';
+      return /安全验证|请依次点击|拖动滑块|点击完成验证/.test(t);
+    }).catch(() => false);
+
+  if (!(await hasCaptcha())) return false;
+
+  log('🔒 检测到安全验证（' + (label || '页面') + '）——请在浏览器窗口里手动完成');
+  log('   我会一直等，完成后自动继续。最多等 5 分钟。');
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(3000);
+    if (!(await hasCaptcha())) {
+      log('✅ 验证已通过，继续');
+      await sleep(2000);
+      return true;
+    }
+  }
+  throw new Error('等待安全验证超时（5 分钟）');
+}
+
 let ctx = null;
 let page = null;
 let closingByScript = false;
@@ -85,6 +112,9 @@ try {
   }
   log('URL: ' + page.url());
 
+  // 打开后可能先弹验证
+  await waitForCaptcha('打开草稿后');
+
   // ---------- 2. 勾创作计划 ----------
   let planVisible = false;
   for (let i = 0; i < 15; i++) {
@@ -120,6 +150,26 @@ try {
     if (planPicked === 'clicked') break;
     await page.evaluate(() => window.scrollBy(0, 300));
     await sleep(1000);
+  }
+  if (planPicked !== 'clicked') {
+    // 很可能是验证码盖住了页面，让人处理完再试一次
+    const had = await waitForCaptcha('选计划时');
+    if (had) {
+      for (let i = 0; i < 8; i++) {
+        planPicked = await page.evaluate((WANT_PLAN) => {
+          const el = [...document.querySelectorAll('.radio__select-label, label, span')].find(
+            (e) => e.children.length === 0 && (e.textContent || '').trim() === WANT_PLAN
+          );
+          if (!el) return 'no-label';
+          el.scrollIntoView({ block: 'center' });
+          el.click();
+          return 'clicked';
+        }, PLAN_LABEL);
+        if (planPicked === 'clicked') break;
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await sleep(1200);
+      }
+    }
   }
   log(PLAN_LABEL + ': ' + planPicked);
   if (planPicked !== 'clicked') throw new Error('选不到「' + PLAN_LABEL + '」');
@@ -261,6 +311,8 @@ try {
   // ---------- 9. 发布 ----------
   log('点发布…');
   await page.click('.editor-publish__btn.main-btn', { timeout: 15000 });
+  await sleep(3000);
+  await waitForCaptcha('点发布后');
   await sleep(7000);
   const after = await page.evaluate(() => ({
     url: location.href,
