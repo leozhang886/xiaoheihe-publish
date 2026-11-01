@@ -30,6 +30,8 @@ const TITLE = arg('--title');
 const COVER = arg('--cover');
 const DRAFT_ID = arg('--draft-id');
 const DO_PUBLISH = argv.includes('--publish');
+const PLAN = (arg('--plan', 'article') || 'article').toLowerCase();   // article | hot
+const PLAN_LABEL = PLAN === 'hot' ? '热点计划' : '文章计划';
 
 if (!COVER || (!DRAFT_ID && !TITLE)) {
   console.error('用法: node tools/cover-publish.mjs (--draft-id ID | --title "标题") --cover "封面路径" [--publish]');
@@ -105,21 +107,22 @@ try {
   // ---------- 3. 选「文章计划」 ----------
   let planPicked = 'no-label';
   for (let i = 0; i < 15; i++) {
-    planPicked = await page.evaluate(() => {
+    planPicked = await page.evaluate((WANT_PLAN) => {
+      const want = WANT_PLAN;
       const el = [...document.querySelectorAll('.radio__select-label, label, span')].find(
-        (e) => e.children.length === 0 && (e.textContent || '').trim() === '文章计划'
+        (e) => e.children.length === 0 && (e.textContent || '').trim() === want
       );
       if (!el) return 'no-label';
       el.scrollIntoView({ block: 'center' });
       el.click();
       return 'clicked';
-    });
+    }, PLAN_LABEL);
     if (planPicked === 'clicked') break;
     await page.evaluate(() => window.scrollBy(0, 300));
     await sleep(1000);
   }
-  log('文章计划: ' + planPicked);
-  if (planPicked !== 'clicked') throw new Error('选不到「文章计划」');
+  log(PLAN_LABEL + ': ' + planPicked);
+  if (planPicked !== 'clicked') throw new Error('选不到「' + PLAN_LABEL + '」');
   await sleep(3000);
 
   // ---------- 4. 等「内容封面」出现 ----------
