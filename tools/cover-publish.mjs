@@ -277,7 +277,7 @@ try {
     await chooser.setFiles(COVER);
     log('文件已提交: ' + path.basename(COVER));
   }
-  await sleep(9000);
+  await sleep(14000);
 
   // ---------- 7. 点「确定」 ----------
   const confirmed = await page.evaluate(() => {
@@ -325,7 +325,20 @@ try {
 
   // ---------- 9. 发布 ----------
   log('点发布…');
-  await page.click('.editor-publish__btn.main-btn', { timeout: 15000 });
+  // 页面上的 toast 提示层会挡住发布按钮，先清掉
+  await page.evaluate(() => {
+    document.querySelectorAll('.hb-toast__wrapper, .hb-cpt__message, .t-mask').forEach((e) => e.remove());
+  });
+  await sleep(800);
+  try {
+    await page.click('.editor-publish__btn.main-btn', { timeout: 15000 });
+  } catch (e) {
+    log('普通点击失败，改用 force 点击: ' + e.message.split('\n')[0]);
+    await page.evaluate(() => {
+      document.querySelectorAll('.hb-toast__wrapper').forEach((x) => x.remove());
+    });
+    await page.click('.editor-publish__btn.main-btn', { timeout: 10000, force: true });
+  }
   await sleep(3000);
   await waitForCaptcha('点发布后');
   await sleep(7000);
