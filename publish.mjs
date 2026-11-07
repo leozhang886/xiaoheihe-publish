@@ -304,32 +304,73 @@ async function selectCommunity(name) {
 
 async function addTopic(name) {
   try {
-    await clickText('添加话题');
+    // 先清掉可能存在的遮罩/弹层
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(400);
+    await page.evaluate(() => {
+      ['.t-mask', '.hb-toast__wrapper'].forEach((sel) =>
+        document.querySelectorAll(sel).forEach((e) => e.remove())
+      );
+    });
+
+    // 点「添加话题」——按钮带图标，按 class + 文本找
+    let opened = false;
+    try {
+      await page.click('.editor__add-btn:has-text("话题")', { timeout: 8000 });
+      opened = true;
+    } catch {
+      const pos = await page.evaluate(() => {
+        const el = [...document.querySelectorAll('.editor__add-btn')].find((e) =>
+          (e.textContent || '').includes('话题')
+        );
+        if (!el) return null;
+        el.scrollIntoView({ block: 'center' });
+        const r = el.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      if (pos) { await page.mouse.click(pos.x, pos.y); opened = true; }
+    }
+    if (!opened) { log(`  ⚠ 话题：找不到「添加话题」按钮`); return; }
+
     await page.waitForSelector('.hb-cpt__mask-wrapper', { timeout: 10000 });
     await sleep(700);
+
+    // 输入关键词
     await setInput('.hb-cpt__mask-wrapper input.editor__search-input--input', name);
     await sleep(3500);
-    const picked = await page.evaluate(() => {
+
+    // 等结果出现，同时留意验证码
+    const state = await page.evaluate(() => {
       const m = document.querySelector('.hb-cpt__mask-wrapper');
-      const it = m?.querySelector('.editor-model__topic-list-item');
-      if (!it) return null;
-      const r = it.getBoundingClientRect();
-      return {
-        title: it.querySelector('.topic-list-item__title')?.textContent?.trim(),
-        x: Math.round(r.x + r.width / 2),
-        y: Math.round(r.y + r.height / 2),
-      };
+      const cap = document.querySelector('#tcaptcha_iframe_dy, [id*=tcaptcha], iframe[src*=turing]');
+      // 真实 class 是 hashtag-list-item，不是 topic-list-item
+      const items = [...(m?.querySelectorAll('.editor-model__hashtag-list-item') ?? [])].map((it) => {
+        const r = it.getBoundingClientRect();
+        return {
+          title: (it.textContent || '').trim().slice(0, 30),
+          x: Math.round(r.x + r.width / 2),
+          y: Math.round(r.y + r.height / 2),
+        };
+      });
+      return { captcha: !!cap, items };
     });
-    if (!picked) {
-      log(`  ⚠ 话题无结果，跳过: ${name}`);
-      await page.keyboard.press('Escape');
+
+    if (state.captcha) {
+      log(`  ⚠ 话题「${name}」被验证码拦截（滑块），自动化无法继续 —— 请手动添加`);
+      await page.keyboard.press('Escape').catch(() => {});
       return;
     }
-    await page.mouse.click(picked.x, picked.y);
+    if (!state.items.length) {
+      log(`  ⚠ 话题无结果，跳过: ${name}`);
+      await page.keyboard.press('Escape').catch(() => {});
+      return;
+    }
+
+    await page.mouse.click(state.items[0].x, state.items[0].y);
     await sleep(2000);
-    log(`  话题已加 → ${picked.title}`);
+    log(`  话题已加 → ${state.items[0].title}`);
   } catch (e) {
-    log(`  ⚠ 话题添加失败（跳过）: ${e.message}`);
+    log(`  ⚠ 话题添加失败（跳过）: ${e.message.split('\n')[0]}`);
     await page.keyboard.press('Escape').catch(() => {});
   }
 }
