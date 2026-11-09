@@ -346,8 +346,12 @@ async function addTopic(name) {
       // 真实 class 是 hashtag-list-item，不是 topic-list-item
       const items = [...(m?.querySelectorAll('.editor-model__hashtag-list-item') ?? [])].map((it) => {
         const r = it.getBoundingClientRect();
+        const txt = (it.textContent || '').trim();
         return {
-          title: (it.textContent || '').trim().slice(0, 30),
+          title: txt.slice(0, 40),
+          // 已有话题显示形如「影之刃零活动624512讨论 216728人参与」
+          // 「创建新话题」是新建入口，点它会凭空造出一个空话题
+          real: /讨论/.test(txt) && /人参与/.test(txt),
           x: Math.round(r.x + r.width / 2),
           y: Math.round(r.y + r.height / 2),
         };
@@ -366,9 +370,15 @@ async function addTopic(name) {
       return;
     }
 
-    await page.mouse.click(state.items[0].x, state.items[0].y);
+    const realOnes = state.items.filter((i) => i.real);
+    if (!realOnes.length) {
+      log(`  ⚠ 话题「${name}」没有已存在的话题，跳过（不新建）`);
+      await page.keyboard.press('Escape').catch(() => {});
+      return;
+    }
+    await page.mouse.click(realOnes[0].x, realOnes[0].y);
     await sleep(2000);
-    log(`  话题已加 → ${state.items[0].title}`);
+    log(`  话题已加 → ${realOnes[0].title}`);
   } catch (e) {
     log(`  ⚠ 话题添加失败（跳过）: ${e.message.split('\n')[0]}`);
     await page.keyboard.press('Escape').catch(() => {});
