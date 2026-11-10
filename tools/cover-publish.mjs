@@ -271,10 +271,44 @@ try {
       chooser = await fc2;
     }
     if (!chooser) {
-      await page.screenshot({ path: shot('no-chooser') });
-      throw new Error('点击上传后没有出现文件选择框');
+      // 兜底一：弹窗打开后可能才动态生成 input[type=file]
+      const dyn = await page.$('.hb-cpt__mask-wrapper input[type=file], input[type=file]');
+      if (dyn) {
+        await dyn.setInputFiles(COVER);
+        log('用点击后出现的 input 上传');
+        chooser = { done: true };
+      }
     }
-    await chooser.setFiles(COVER);
+    if (!chooser) {
+      // 兜底二：重载页面再走一次（弹窗没正常挂载时有效）
+      log('⚠ 没出文件选择框，重载页面重试一次');
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await sleep(9000);
+      const reopen = await page.evaluate(() => {
+        const el = [...document.querySelectorAll('.editor__add-btn, span, button')].find(
+          (e) => (e.textContent || '').trim() === '修改封面'
+        );
+        return !!el;
+      }).catch(() => false);
+      log('重载后页面可用: ' + reopen);
+      const fc3 = page.waitForEvent('filechooser', { timeout: 15000 }).catch(() => null);
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('*')].find(
+          (e) => e.children.length === 0 && ['点击上传', '点击选择', '上传图片', '选择图片'].includes((e.textContent || '').trim())
+        );
+        if (el) { el.scrollIntoView({ block: 'center' }); el.click(); }
+      }).catch(() => {});
+      chooser = await fc3;
+      if (!chooser) {
+        const dyn2 = await page.$('input[type=file]').catch(() => null);
+        if (dyn2) { await dyn2.setInputFiles(COVER); log('重载后用 input 上传'); chooser = { done: true }; }
+      }
+    }
+    if (!chooser) {
+      await page.screenshot({ path: shot('no-chooser') });
+      throw new Error('点击上传后没有出现文件选择框（已重试一次）');
+    }
+    if (!chooser.done) await chooser.setFiles(COVER);
     log('文件已提交: ' + path.basename(COVER));
   }
   await sleep(14000);
