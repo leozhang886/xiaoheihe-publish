@@ -42,6 +42,44 @@ const log = (m) => console.log('[cv] ' + m);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (name) => path.join(SHOTS, `${name}-${Date.now()}.png`);
 
+/** 失败时把页面真实状态存成 JSON，方便定位 */
+async function dumpState(tag) {
+  try {
+    const st = await page.evaluate(() => {
+      const txt = document.body.innerText || '';
+      const btnTexts = [...document.querySelectorAll('button, .editor__add-btn, .editor-publish__btn')]
+        .filter((e) => e.offsetParent !== null)
+        .map((e) => (e.textContent || '').trim().slice(0, 24))
+        .filter(Boolean);
+      const items = [...document.querySelectorAll('.creator-editor__form-item')].map((it) =>
+        (it.querySelector('.creator-editor__form-label')?.textContent || '').trim()
+      );
+      return {
+        url: location.href,
+        hasBanner: /上次未发布的内容/.test(txt),
+        hasPublishPanel: items.length > 0,
+        formItems: items,
+        buttons: [...new Set(btnTexts)].slice(0, 30),
+        hasMask: !!document.querySelector('.hb-cpt__mask-wrapper'),
+        hasFileInput: !!document.querySelector('input[type=file]'),
+        hasCaptcha: !!document.querySelector('#tcaptcha_iframe_dy, iframe[src*=turing]'),
+        textHead: txt.replace(/\s+/g, ' ').slice(0, 300),
+      };
+    });
+    const f = path.join(SHOTS, `state-${tag}-${Date.now()}.json`);
+    fs.writeFileSync(f, JSON.stringify(st, null, 2));
+    log('状态已存: ' + path.basename(f));
+    log('  URL: ' + st.url);
+    log('  发布设置面板: ' + st.hasPublishPanel + '  项: ' + JSON.stringify(st.formItems));
+    log('  遗留提示: ' + st.hasBanner + '  弹窗: ' + st.hasMask + '  file input: ' + st.hasFileInput + '  验证码: ' + st.hasCaptcha);
+    log('  可见按钮: ' + JSON.stringify(st.buttons));
+    return st;
+  } catch (e) {
+    log('dumpState 失败: ' + e.message.split('\n')[0]);
+    return null;
+  }
+}
+
 /**
  * 检测是否弹出了「安全验证」，弹了就等人来点。
  * 这是把控制权交回真人——不自动过验证码。
@@ -126,6 +164,27 @@ try {
     await sleep(9000);
   }
   log('URL: ' + page.url());
+
+  // 打开草稿后可能弹出「你还有上次未发布的内容」提示，它会挡住整个发布设置
+  const banner = await page.evaluate(() => {
+    const t = document.body.innerText || '';
+    if (!/上次未发布的内容/.test(t)) return null;
+    for (const el of document.querySelectorAll('span, button, div, a')) {
+      if (el.children.length === 0 && ['忽略', '继续编辑'].includes((el.textContent || '').trim())) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0) return { text: el.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+    }
+    return { text: 'not-found' };
+  });
+  if (banner) {
+    log('检测到「上次未发布内容」提示: ' + banner.text);
+    if (banner.x) {
+      await page.mouse.click(banner.x, banner.y);
+      log('已点「忽略」，等页面重载发布设置');
+      await sleep(4000);
+    }
+  }
 
   // 打开后可能先弹验证
   await waitForCaptcha('打开草稿后');
@@ -306,6 +365,7 @@ try {
     }
     if (!chooser) {
       await page.screenshot({ path: shot('no-chooser') });
+      await dumpState('no-chooser');
       throw new Error('点击上传后没有出现文件选择框（已重试一次）');
     }
     if (!chooser.done) await chooser.setFiles(COVER);
