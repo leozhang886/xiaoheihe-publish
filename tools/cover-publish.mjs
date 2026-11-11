@@ -42,6 +42,29 @@ const log = (m) => console.log('[cv] ' + m);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (name) => path.join(SHOTS, `${name}-${Date.now()}.png`);
 
+/**
+ * 点掉「你还有上次未发布的内容」这条提示。
+ * 它会一直挂在页面顶部，且渲染得比检查时机晚，所以要在多个位置调用。
+ */
+async function clearStaleBanner() {
+  const hit = await page.evaluate(() => {
+    const t = document.body.innerText || '';
+    if (!/上次未发布的内容/.test(t)) return null;
+    for (const el of document.querySelectorAll('span, button, div, a')) {
+      if (el.children.length === 0 && (el.textContent || '').trim() === '忽略') {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+    }
+    return null;
+  }).catch(() => null);
+  if (!hit) return false;
+  await page.mouse.click(hit.x, hit.y);
+  log('已点掉「上次未发布内容」提示');
+  await sleep(3500);
+  return true;
+}
+
 /** 失败时把页面真实状态存成 JSON，方便定位 */
 async function dumpState(tag) {
   try {
@@ -248,6 +271,10 @@ try {
   log(PLAN_LABEL + ': ' + planPicked);
   if (planPicked !== 'clicked') throw new Error('选不到「' + PLAN_LABEL + '」');
   await sleep(3000);
+
+  // 选完计划后再查一次「上次未发布内容」提示——它经常是延迟渲染的，
+  // 不点掉会让后面的「点击上传」点不动（按钮在但被浮层挡住/文案不同）
+  await clearStaleBanner();
 
   // ---------- 4. 等「内容封面」出现 ----------
   let hasCoverField = false;
