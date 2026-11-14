@@ -30,6 +30,7 @@ const TITLE = arg('--title');
 const COVER = arg('--cover');
 const DRAFT_ID = arg('--draft-id');
 const DO_PUBLISH = argv.includes('--publish');
+const FORCE_SKIP_COVER = argv.includes('--skip-cover');
 const PLAN = (arg('--plan', 'article') || 'article').toLowerCase();   // article | hot
 const PLAN_LABEL = PLAN === 'hot' ? '热点计划' : '文章计划';
 
@@ -148,19 +149,37 @@ async function waitForCaptcha(label = '') {
 let ctx = null;
 let page = null;
 let closingByScript = false;
+let SHARED = false;
+let browser = null;
 
 async function closeAll() {
   closingByScript = true;
-  await ctx?.close().catch(() => {});
+  if (SHARED) {
+    // 共用浏览器：只关自己开的标签页，不关整个浏览器
+    await page?.close().catch(() => {});
+  } else {
+    await ctx?.close().catch(() => {});
+  }
 }
 
 try {
-  ctx = await chromium.launchPersistentContext(PROFILE, {
-    headless: false,
-    viewport: { width: 1600, height: 1000 },
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
-  page = ctx.pages()[0] ?? (await ctx.newPage());
+  // 优先连已经开着的浏览器（session.mjs 常驻在 9222）。
+  // 这样不会反复启停同一个 profile——反复开关会留下残留编辑状态，也更容易触发验证码。
+  try {
+    browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+    SHARED = true;
+    ctx = browser.contexts()[0] ?? (await browser.newContext());
+    page = await ctx.newPage();
+    log('已连接常驻浏览器（9222）');
+  } catch {
+    log('9222 没开，自己起一个');
+    ctx = await chromium.launchPersistentContext(PROFILE, {
+      headless: false,
+      viewport: { width: 1600, height: 1000 },
+      args: ['--disable-blink-features=AutomationControlled'],
+    });
+    page = ctx.pages()[0] ?? (await ctx.newPage());
+  }
 
   page.on('crash', () => log('PAGE_CRASH'));
   page.on('close', () => log('PAGE_CLOSE' + (closingByScript ? ' (script-initiated)' : '')));
@@ -298,6 +317,25 @@ try {
   });
   await sleep(1200);
 
+  // 封面已经传过的话，弹窗打开会是裁剪状态，没有「点击上传」按钮，硬走会卡死。
+  const coverAlready = await page.evaluate(() => {
+    const lbl = [...document.querySelectorAll('.creator-editor__form-label')].find(
+      (e) => (e.textContent || '').trim() === '内容封面'
+    );
+    const row = lbl?.closest('.creator-editor__form-item');
+    if (!row) return false;
+    // 没封面时这里也有一个占位 img（.hb-cpt__image--default），不能算"已有图"
+    const img = row.querySelector('img');
+    if (!img) return false;
+    if (img.classList.contains('hb-cpt__image--default')) return false;
+    if (img.closest('.hb-cpt__image--default')) return false;
+    return img.complete && img.naturalWidth > 50;
+  }).catch(() => false);
+
+  if (FORCE_SKIP_COVER) log('指定了 --skip-cover，跳过上传');
+  const doSkip = coverAlready || FORCE_SKIP_COVER;
+  if (coverAlready) log('内容封面已有图，跳过上传步骤');
+  if (!doSkip) {
   // ---------- 5. 悬停缩略图 → 点「修改封面」----------
   const thumb = await page.evaluate(() => {
     const lbl = [...document.querySelectorAll('.creator-editor__form-label')].find((e) => (e.textContent || '').trim() === '内容封面');
@@ -398,7 +436,27 @@ try {
     if (!chooser.done) await chooser.setFiles(COVER);
     log('文件已提交: ' + path.basename(COVER));
   }
-  await sleep(14000);
+  // 等裁剪区里的图片真正加载出来，再点确定（原来死等 14s，图没出来就会传成空封面）
+  {
+    let ready = false;
+    for (let i = 0; i < 30; i++) {
+      const st = await page.evaluate(() => {
+        const m = document.querySelector('.hb-cpt__mask-wrapper');
+        if (!m) return { hasModal: false };
+        const imgs = [...m.querySelectorAll('img')].filter((e) => e.offsetParent !== null);
+        return {
+          hasModal: true,
+          count: imgs.length,
+          loaded: imgs.filter((i) => i.complete && i.naturalWidth > 50).length,
+          nat: imgs.map((i) => i.naturalWidth).slice(0, 3),
+        };
+      }).catch(() => ({ hasModal: false }));
+      if (st.hasModal && st.loaded > 0) { ready = true; log('裁剪图已加载: ' + JSON.stringify(st.nat)); break; }
+      await sleep(1000);
+    }
+    if (!ready) log('⚠ 30 秒内没等到裁剪图加载，仍然尝试点确定');
+  }
+  await sleep(1500);
 
   // ---------- 7. 点「确定」 ----------
   const confirmed = await page.evaluate(() => {
@@ -413,6 +471,8 @@ try {
   });
   log('点「确定」: ' + confirmed);
   await sleep(6000);
+
+  }
 
   // ---------- 8. 校验封面 ----------
   const coverSrc = await page.evaluate(() => {
@@ -445,6 +505,19 @@ try {
   }
 
   // ---------- 9. 发布 ----------
+  // 已发布的文章，主按钮是「修改」而不是「发布」。
+  // 对它点发布只会回到编辑页，URL 也不会变成 /app/bbs/link/，会被误判为失败。
+  const mainBtnText = await page.evaluate(() => {
+    const b = document.querySelector('.editor-publish__btn.main-btn');
+    return (b?.textContent || '').trim();
+  }).catch(() => '');
+  if (mainBtnText && mainBtnText !== '发布') {
+    log(`主按钮是「${mainBtnText}」，不是「发布」——这篇已经是已发布状态，跳过发布`);
+    log('按已发布处理，不再点击');
+    await closeAll();
+    process.exit(0);
+  }
+
   log('点发布…');
   // 页面上的 toast 提示层会挡住发布按钮，先清掉
   await page.evaluate(() => {
